@@ -1,0 +1,42 @@
+#!/bin/bash
+
+if [[ $# -lt 2 ]]; then
+	echo "usage: $(basename $0) GIT-REF COMMAND [..OPTIONS]"
+	exit
+fi
+
+range=${1:-HEAD}
+shift 1
+
+# if range does not contain .. use the build a range from the ref to HEAD
+if [[ ! "$range" =~ .+\.\..+ ]]; then
+   range="${range}..HEAD"
+fi
+
+# find out where we are right now
+head=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [[ $? -ne 0 ]]; then
+    head=$(git rev-parse HEAD)
+fi
+echo "HEAD is $head"
+
+# sanity check: clean working copy only!
+if [[ $(git status --porcelain --untracked-files=no | wc -l) -gt 0 ]]; then
+    echo 'Working copy must be clean'
+    exit 1
+fi
+
+function restore {
+    git checkout ${head}
+}
+
+trap restore EXIT
+
+for commit in $(git rev-list ${range} | sed '1!G;h;$!d'); do
+    echo "Checking out $commit"
+    git checkout --detach -q $commit
+	if ! "$@"; then
+		echo "Command failed, bailing out"
+		exit 1
+	fi
+done
